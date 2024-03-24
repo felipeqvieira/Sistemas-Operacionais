@@ -75,30 +75,35 @@ void dispatcherBody(){
 
   userTasks--;
 
+  if(userTasks == 0){
+    task_exit(0);
+  }
+
   task_t *nextTask;
 
   printf("userTasks: %d\n", userTasks);
 
   while (userTasks > 0){
 
-    if (queue_size(readyQueue) > 0){
+    nextTask = scheduler();
 
-      nextTask = scheduler();
+    if(nextTask == NULL){
+      printf("Erro ao selecionar a próxima tarefa\n");
+      exit(1);
+    }
 
-      task_switch(nextTask);
+    task_switch(nextTask);
 
-      switch (taskCurrent->status){
-        case READY:
-          queue_remove((queue_t **) &readyQueue, (queue_t *) taskCurrent);
-          userTasks--;
-          break;
-        case SUSP:
-          break;
-        case ENDED:
-          userTasks--;
-          break;
-      }
-
+    switch (taskCurrent->status){
+      case READY:
+        queue_remove((queue_t **) &readyQueue, (queue_t *) taskCurrent);
+        userTasks--;
+        break;
+      case SUSP:
+        break;
+      case ENDED:
+        userTasks--;
+        break;
     }
 
   }
