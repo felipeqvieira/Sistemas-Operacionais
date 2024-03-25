@@ -75,8 +75,10 @@ int queue_append (queue_t **queue, queue_t *elem){
 int queue_remove(queue_t **queue, queue_t *elem) {
   
   // verifica queue e elemento
-  if (! queue || ! *queue || ! elem ) 
+  if (! queue || ! *queue || ! elem ){ 
+    printf("Erro nas primeira condições!\n");
     return -1;
+  }
 
   queue_t *aux = *queue;
 
@@ -123,6 +125,6 @@ int queue_remove(queue_t **queue, queue_t *elem) {
     }
     aux = aux->next;
   }
-
+    printf("Erro no final!\n");
     return -1;
 }

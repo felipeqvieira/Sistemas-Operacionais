@@ -14,8 +14,6 @@ task_t Pang, Peng, Ping, Pong, Pung ;
 void Body (void * arg)
 {
 
-   printf ("tarefa 1!\n") ;
-
    int i ;
 
    printf ("%s: inicio\n", (char *) arg) ;
@@ -34,13 +32,36 @@ int main (int argc, char *argv[])
 
    ppos_init () ;
    
-   task_init (&Pang, Body, "    Pang") ;
-   task_init (&Peng, Body, "        Peng") ;
-   task_init (&Ping, Body, "            Ping") ;
-   task_init (&Pong, Body, "                Pong") ;
-   task_init (&Pung, Body, "                    Pung") ;
-   
+   if (task_init (&Pang, Body, "    Pang") != 2)
+   {
+      printf ("Erro Pang\n");
+      return 1;
+   }
 
+   if (task_init (&Peng, Body, "        Peng") != 3)
+   {
+      printf ("Erro Peng\n");
+      return 1;
+   }
+
+   if (task_init (&Ping, Body, "            Ping") != 4)
+   {
+      printf ("Erro Ping\n");
+      return 1;
+   }
+
+   if (task_init (&Pong, Body, "                Pong") != 5)
+   {
+      printf ("Erro Pong\n");
+      return 1;
+   }
+
+   if(task_init (&Pung, Body, "                    Pung") != 6)
+   {
+      printf ("Erro Pung\n");
+      return 1;
+   }
+   
    printf ("main: fim\n");
 
    task_exit (0);

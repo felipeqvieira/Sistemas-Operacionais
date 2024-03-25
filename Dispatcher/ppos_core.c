@@ -11,38 +11,39 @@
 #define SUSP 0
 #define ENDED -1
 
-task_t *taskCurrent;
-task_t *mainTask;
+task_t mainTask;
+task_t dispTask;
 
-queue_t *readyQueue;
+task_t *currentTask;
+task_t *readyQueue;
 
-task_t *dispatcherTask;
-
-int newTaskId = 1;
-int userTasks = 0;
+int taskCounter = 0;
+int newTaskId = 0;
 
 void task_exit(int exit_code){
-  
-  if(exit_code == 0){
-    taskCurrent->status = ENDED;
-    task_switch(mainTask);
-  } else
-  {
-    taskCurrent->status = ENDED;
-    task_switch(dispatcherTask);
+
+  currentTask->status = ENDED;
+
+  //printf("\nIniciando Task Exit!\n");
+  //printf("CurrentTask: %d \n", currentTask->id);
+  //printf("CurrentTask->status: %d \n", currentTask->status);
+
+  if (currentTask->id == dispTask.id){
+    //printf("Dispatcher encerrado! \n");
+    exit(0);
   }
-  
+  else{
+    //printf("Trocando para Dispatcher!\nFim do Task Exit!\n");
+    task_switch(&dispTask);
+  }
 }
 
 int task_switch(task_t *task){
 
-  task_t *taskAux = taskCurrent;
+  task_t *auxTask = currentTask;
+  currentTask = task;
 
-  taskCurrent = task;
-
-  printf("task_switch: trocando contexto %d -> %d\n", taskAux->id, taskCurrent->id);
-
-  swapcontext(&(taskAux->context), &(taskCurrent->context));
+  swapcontext(&auxTask->context, &task->context);
 
   return 0;
 
@@ -50,91 +51,79 @@ int task_switch(task_t *task){
 
 task_t *scheduler(){
 
-  //retorna a primeira tarefa da fila
-  return (task_t *) readyQueue;
+  return readyQueue;
 
 }
 
 void task_yield(){
 
-  taskCurrent->status = READY;
+  currentTask->status = READY;
 
-  queue_append((queue_t **) &readyQueue, (queue_t *) taskCurrent);
-
-  userTasks++;
-
-  task_switch(dispatcherTask);
+  task_switch(&dispTask);
 
 }
 
 void dispatcherBody(){
 
-  printf("Dispatcher!\n");
+  //printf("\nIniciando Dispatcher!\n");
 
-  queue_remove((queue_t **) &readyQueue, (queue_t *) dispatcherTask);
-
-  userTasks--;
-
-  if(userTasks == 0){
-    task_exit(0);
+  if(queue_remove((queue_t **)&readyQueue, (queue_t *)&dispTask) == -1){
+    perror("Erro ao remover dispatcher da fila de prontos: ");
+    exit(-1);
   }
+
+  taskCounter--;
+
+  //printf("TaskCounter: %d \n", taskCounter);
+
+  if (taskCounter == 0)
+    task_exit(0);
 
   task_t *nextTask;
 
-  printf("userTasks: %d\n", userTasks);
-
-  while (userTasks > 0){
-
+  while (taskCounter > 0){
+    
     nextTask = scheduler();
+    
+    //printf("Tarefa atual: %d \n", nextTask->id);
 
-    if(nextTask == NULL){
-      printf("Erro ao selecionar a próxima tarefa\n");
-      exit(1);
+    if(queue_remove((queue_t **)&readyQueue, (queue_t *)nextTask) == -1){
+      perror("Erro ao remover task da fila de prontos: ");
+      exit(-1);
     }
+
+    taskCounter--;
+
+    //printf("TaskCounter: %d \n", taskCounter);
 
     task_switch(nextTask);
 
-    switch (taskCurrent->status){
+    //printf("Status Atual: %d \n", nextTask->status);
+
+    switch(nextTask->status){
       case READY:
-        queue_remove((queue_t **) &readyQueue, (queue_t *) taskCurrent);
-        userTasks--;
+        queue_append((queue_t **)&readyQueue, (queue_t *)nextTask);
+        taskCounter++;
         break;
       case SUSP:
         break;
       case ENDED:
-        userTasks--;
+        free(nextTask->context.uc_stack.ss_sp); 
         break;
     }
-
   }
+
+  //printf("Dispatcher encerrado! \n");
 
   task_exit(0);
 
 }
 
-
 int task_init(task_t *task, void (*start_func)(void *), void *arg){
 
-  if (task == dispatcherTask)
-    printf("task_init: dispatcherTask já inicializada\n");
-  else 
-    task = (task_t *) malloc(sizeof(task_t));
-
-  if(!task){
-    printf("Erro ao alocar memória para a nova tarefa\n");
-    return -1;
-  }
-
-  task->id = newTaskId++;
-
-  task->next = task;
-  task->prev = task;
-
-  task->status = READY;
-
-  getcontext(&(task->context));
-
   char *stack;
+
+  getcontext(&task->context);
 
   stack = malloc(STACKSIZE);
 
@@ -144,53 +133,47 @@ int task_init(task_t *task, void (*start_func)(void *), void *arg){
     task->context.uc_stack.ss_flags = 0;
     task->context.uc_link = 0;
   } else {
-    printf("Erro ao alocar memória para a pilha da nova tarefa\n");
+    perror("Erro na criação da pilha: ");
     return -1;
   }
 
-  makecontext(&(task->context), (void *) start_func, 1, arg);
+  makecontext(&task->context, (void (*)(void))start_func, 1, arg);
 
-  printf("task_init: criou tarefa %d\n", task->id);
+  task->id = ++newTaskId;
+  task->status = READY;
+  task->next = NULL;
+  task->prev = NULL;
 
-  taskCurrent = task;
+  if(queue_append((queue_t **)&readyQueue, (queue_t *)task) == -1){
+    perror("Erro ao adicionar task na fila de prontos: ");
+    return -1;
+  }
+
+  taskCounter++;
 
   return task->id;
 
 }
 
-
-
 void ppos_init(){
 
   setvbuf(stdout, 0, _IONBF, 0);
 
-  mainTask = (task_t *) malloc(sizeof(task_t));
+  mainTask.id = newTaskId;
 
-  if (! mainTask){
-    printf("Erro ao alocar memória para a mainTask\n");
-    exit(1);
+  mainTask.next = NULL;
+  mainTask.prev = NULL;
+
+  mainTask.status = EXEC;
+
+  if (task_init(&dispTask, dispatcherBody, NULL) != 1){
+    perror("Erro ao inicializar dispatcher: ");
+    exit(-1);
   }
 
-  mainTask->id = 0;
+  currentTask = &mainTask;
 
-  mainTask->next = NULL;
-  mainTask->prev = NULL;
-
-  mainTask->status = EXEC;
-
-  taskCurrent = mainTask; 
-
-  getcontext(&(mainTask->context));
-
-  dispatcherTask = (task_t *) malloc(sizeof(task_t));
-
-  if (! dispatcherTask){
-    printf("Erro ao alocar memória para a dispatcherTask\n");
-    exit(1);
-  }
-
-  task_init(dispatcherTask, dispatcherBody, NULL);
-
-  task_yield();
-
+  //printf("CurrentTask: %d \n", currentTask->id);
+  //printf("Terminei ppos_init! \n");
+  
 }
