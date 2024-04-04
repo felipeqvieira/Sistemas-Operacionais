@@ -42,16 +42,22 @@ void task_exit(int exit_code){
 
   currentTask->status = ENDED;
 
-  //printf("\nIniciando Task Exit!\n");
-  //printf("CurrentTask: %d \n", currentTask->id);
-  //printf("CurrentTask->status: %d \n", currentTask->status);
+  #ifdef DEBUG
+  printf("\nIniciando Task Exit!\n");
+  printf("CurrentTask: %d \n", currentTask->id);
+  printf("CurrentTask->status: %d \n", currentTask->status);
+  #endif
 
-  if (currentTask->id == dispTask.id){
-    //printf("Dispatcher encerrado! \n");
+  if (currentTask->id == dispTask.id && exit_code == 0){
+    #ifdef DEBUG
+    printf("Dispatcher encerrado! \n");
+    #endif
     exit(0);
   }
   else{
-    //printf("Trocando para Dispatcher!\nFim do Task Exit!\n");
+    #ifdef DEBUG
+    printf("Trocando para Dispatcher!\nFim do Task Exit!\n");
+    #endif
     task_switch(&dispTask);
   }
 }
@@ -74,8 +80,9 @@ task_t *scheduler(){
 
   do{
 
-    //printa tarefa id, prioridade e envelhecimento em um printf
-    //printf("Tarefa: %d, Prioridade: %d, Envelhecimento: %d \n", auxTask->id, auxTask->prioridade, auxTask->envelhecimento); 
+    #ifdef DEBUG
+    printf("Tarefa: %d, Prioridade: %d, Envelhecimento: %d \n", auxTask->id, auxTask->prioridade, auxTask->envelhecimento); 
+    #endif
 
     if(auxTask->prioridade < menorPrio){
       nextTask = auxTask;
@@ -88,8 +95,6 @@ task_t *scheduler(){
 
   menorPrio = 21;
 
-  printf("\n");
-
   do{
 
     if(auxTask != nextTask){
@@ -97,7 +102,9 @@ task_t *scheduler(){
       auxTask->prioridade--;
     }
 
-    //printf("Tarefa: %d, Prioridade: %d, Envelhecimento: %d \n", auxTask->id, auxTask->prioridade, auxTask->envelhecimento); 
+    #ifdef DEBUG
+    printf("Tarefa: %d, Prioridade: %d, Envelhecimento: %d \n", auxTask->id, auxTask->prioridade, auxTask->envelhecimento); 
+    #endif
       
     auxTask = auxTask->next;
   
@@ -120,7 +127,9 @@ void task_yield(){
 
 void dispatcherBody(){
 
-  //printf("\nIniciando Dispatcher!\n");
+  #ifdef DEBUG
+  printf("\nIniciando Dispatcher!\n");
+  #endif
 
   if(queue_remove((queue_t **)&readyQueue, (queue_t *)&dispTask) == -1){
     perror("Erro ao remover dispatcher da fila de prontos: ");
@@ -129,7 +138,9 @@ void dispatcherBody(){
 
   taskCounter--;
 
-  //printf("TaskCounter: %d \n", taskCounter);
+  #ifdef DEBUG
+  printf("TaskCounter: %d \n", taskCounter);
+  #endif
 
   if (taskCounter == 0)
     task_exit(0);
@@ -140,18 +151,24 @@ void dispatcherBody(){
     
     nextTask = scheduler();
     
-    //printf("Tarefa atual: %d \n", nextTask->id);
+    #ifdef DEBUG
+    printf("Tarefa atual: %d \n", nextTask->id);
+    #endif
 
     queue_remove((queue_t **)&readyQueue, (queue_t *)nextTask);
 
     taskCounter--;
 
-    //printf("TaskCounter: %d \n", taskCounter);
+    #ifdef DEBUG
+    printf("TaskCounter: %d \n", taskCounter);
+    #endif
 
     task_switch(nextTask);
 
-    //printf("\nTarefa: %d \n", nextTask->id);
-    //printf("\nStatus Atual: %d \n", nextTask->status);
+    #ifdef DEBUG
+    printf("\nTarefa: %d \n", nextTask->id);
+    printf("\nStatus Atual: %d \n", nextTask->status);
+    #endif
 
     switch(nextTask->status){
       case READY:
@@ -166,7 +183,9 @@ void dispatcherBody(){
     }
   }
 
-  //printf("Dispatcher encerrado! \n");
+  #ifdef DEBUG
+  printf("Dispatcher encerrado! \n");
+  #endif
 
   task_exit(0);
 
@@ -229,7 +248,9 @@ void ppos_init(){
 
   currentTask = &mainTask;
 
-  //printf("CurrentTask: %d \n", currentTask->id);
-  //printf("Terminei ppos_init! \n");
+  #ifdef DEBUG
+  printf("CurrentTask: %d \n", currentTask->id);
+  printf("Terminei ppos_init! \n");
+  #endif
   
 }

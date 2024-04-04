@@ -21,5 +21,9 @@ $(EXEC): $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+
 clean:
 	rm -f $(OBJS) $(EXEC)
+
+debug: CFLAGS += -DDEBUG
+debug: $(EXEC)
