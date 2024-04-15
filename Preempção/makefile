@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -std=c99 
+CFLAGS = -Wall -std=c99
 
 # Lista de arquivos fonte
 SRCS = $(wildcard *.c)
