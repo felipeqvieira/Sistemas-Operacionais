@@ -1,6 +1,6 @@
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <sys/time.h>
 
 #include "ppos.h"
@@ -19,30 +19,30 @@ task_t dispTask;
 task_t *currentTask;
 task_t *readyQueue;
 
+struct sigaction action;
+struct itimerval timer;
+
 int taskCounter = 0;
 int newTaskId = 0;
 
 int menorPrio = 21;
 
-int timer_handler(){
+int task_id(){
+  return currentTask->id;
+}
 
-  if(currentTask->system_task == 0){
+void timer_handler(){
+
+  if(currentTask->system_task == 0)
     currentTask->quantum--;
-    if(currentTask->quantum == 0){
-      currentTask->quantum = 20;
-      task_yield();
-      return 1;
-    }
-  }
 
-  return 0;
+  if(currentTask->quantum == 0){
+    task_yield();
+  }
 
 }
 
 void setup_timer(){
-
-  struct sigaction action;
-  struct itimerval timer;
 
   action.sa_handler = timer_handler;
   sigemptyset(&action.sa_mask);
@@ -55,9 +55,9 @@ void setup_timer(){
 
   // ajusta valores do temporizador
   timer.it_value.tv_usec = 1000 ;      // primeiro disparo, em micro-segundos
-  timer.it_value.tv_sec  = 1 ;      // primeiro disparo, em segundos
-  timer.it_interval.tv_usec = 0 ;   // disparos subsequentes, em micro-segundos
-  timer.it_interval.tv_sec  = 0.001 ;   // disparos subsequentes, em segundos
+  timer.it_value.tv_sec  = 0 ;      // primeiro disparo, em segundos
+  timer.it_interval.tv_usec = 1000 ;   // disparos subsequentes, em micro-segundos
+  timer.it_interval.tv_sec  = 0 ;   // disparos subsequentes, em segundos
 
   // arma o temporizador ITIMER_REAL
   if (setitimer (ITIMER_REAL, &timer, 0) < 0)
@@ -198,6 +198,8 @@ void dispatcherBody(){
   while (taskCounter > 0){
 
     nextTask = scheduler();
+
+    nextTask->quantum = 20;
     
     #ifdef DEBUG
     printf("Tarefa atual: %d \n", nextTask->id);

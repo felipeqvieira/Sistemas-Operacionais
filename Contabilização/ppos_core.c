@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <sys/time.h>
 
 #include "ppos.h"
 #include "ppos_data.h"
@@ -17,10 +19,62 @@ task_t dispTask;
 task_t *currentTask;
 task_t *readyQueue;
 
+struct sigaction action;
+struct itimerval timer;
+
 int taskCounter = 0;
 int newTaskId = 0;
-
 int menorPrio = 21;
+int tempo_criacao = 0;
+
+unsigned int tempo = 0;
+
+unsigned int systime(){
+  return tempo;
+}
+
+int task_id(){
+  return currentTask->id;
+}
+
+void timer_handler(){
+
+  if(currentTask->system_task == 0)
+    currentTask->quantum--;
+
+  if(currentTask->quantum == 0){
+    task_yield();
+  }
+
+  tempo++;
+
+}
+
+void setup_timer(){
+
+  action.sa_handler = timer_handler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+
+  if (sigaction(SIGALRM, &action, 0) < 0){
+    perror("Erro ao instalar o tratador de sinal: ");
+    exit(-1);
+  }
+
+  // ajusta valores do temporizador
+  timer.it_value.tv_usec = 1000 ;      // primeiro disparo, em micro-segundos
+  timer.it_value.tv_sec  = 0 ;      // primeiro disparo, em segundos
+  timer.it_interval.tv_usec = 1000 ;   // disparos subsequentes, em micro-segundos
+  timer.it_interval.tv_sec  = 0 ;   // disparos subsequentes, em segundos
+
+  // arma o temporizador ITIMER_REAL
+  if (setitimer (ITIMER_REAL, &timer, 0) < 0)
+  {
+    perror ("Erro em setitimer: ") ;
+    exit (1) ;
+  }
+
+}
 
 int task_getprio(task_t *task){
   
@@ -42,6 +96,8 @@ void task_exit(int exit_code){
 
   currentTask->status = ENDED;
 
+  
+
   #ifdef DEBUG
   printf("\nIniciando Task Exit!\n");
   printf("CurrentTask: %d \n", currentTask->id);
@@ -52,12 +108,22 @@ void task_exit(int exit_code){
     #ifdef DEBUG
     printf("Dispatcher encerrado! \n");
     #endif
+
+    currentTask->tempo_criacao = systime() - currentTask->tempo_criacao;
+
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->id, currentTask->tempo_criacao, currentTask->tempo_processador, currentTask->ativacoes);
+
     exit(0);
   }
   else{
     #ifdef DEBUG
     printf("Trocando para Dispatcher!\nFim do Task Exit!\n");
     #endif
+    currentTask->tempo_criacao = systime() - currentTask->tempo_criacao;
+
+    // Task 17 exit: execution time 4955 ms, processor time 925 ms, 171 activations
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->id, currentTask->tempo_criacao, currentTask->tempo_processador, currentTask->ativacoes);
+
     task_switch(&dispTask);
   }
 }
@@ -121,11 +187,15 @@ void task_yield(){
 
   currentTask->status = READY;
 
+  dispTask.ativacoes++;
+
   task_switch(&dispTask);
 
 }
 
 void dispatcherBody(){
+
+  setup_timer();
 
   #ifdef DEBUG
   printf("\nIniciando Dispatcher!\n");
@@ -148,8 +218,10 @@ void dispatcherBody(){
   task_t *nextTask;
 
   while (taskCounter > 0){
-    
+
     nextTask = scheduler();
+
+    nextTask->quantum = 20;
     
     #ifdef DEBUG
     printf("Tarefa atual: %d \n", nextTask->id);
@@ -163,7 +235,10 @@ void dispatcherBody(){
     printf("TaskCounter: %d \n", taskCounter);
     #endif
 
+    nextTask->ativacoes++;
+    int tempo_processador = systime();
     task_switch(nextTask);
+    nextTask->tempo_processador += systime() - tempo_processador;
 
     #ifdef DEBUG
     printf("\nTarefa: %d \n", nextTask->id);
@@ -219,12 +294,25 @@ int task_init(task_t *task, void (*start_func)(void *), void *arg){
   task->prioridade = 0;
   task->envelhecimento = 0;
 
+  task->tempo_criacao = 0;
+  task->tempo_processador = 0;
+  task->ativacoes = 0;
+
   if(queue_append((queue_t **)&readyQueue, (queue_t *)task) == -1){
     perror("Erro ao adicionar task na fila de prontos: ");
     return -1;
   }
 
   taskCounter++;
+
+  if(task->id != dispTask.id)
+    task->system_task = 0;
+  else
+    task->system_task = 1;
+  
+  task->quantum = 20;
+
+  task->tempo_criacao = systime();
 
   return task->id;
 
@@ -238,6 +326,8 @@ void ppos_init(){
 
   mainTask.next = NULL;
   mainTask.prev = NULL;
+  mainTask.tempo_criacao = 0;
+  mainTask.tempo_processador = 0;
 
   mainTask.status = EXEC;
 
@@ -247,10 +337,13 @@ void ppos_init(){
   }
 
   currentTask = &mainTask;
+  mainTask.ativacoes = 1;
 
   #ifdef DEBUG
   printf("CurrentTask: %d \n", currentTask->id);
   printf("Terminei ppos_init! \n");
   #endif
+
+  setup_timer();
   
 }

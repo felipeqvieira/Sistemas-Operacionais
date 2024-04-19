@@ -1,11 +1,8 @@
-# Makefile para compilar os arquivos fornecidos
-
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99
-LDFLAGS =
+CFLAGS = -Wall 
 
 # Lista de arquivos fonte
-SRCS = ppos_core.c queue.c teste1.c
+SRCS = $(wildcard *.c)
 
 # Lista de arquivos objeto
 OBJS = $(SRCS:.c=.o)
@@ -16,10 +13,13 @@ EXEC = teste
 all: $(EXEC)
 
 $(EXEC): $(OBJS)
-	$(CC) $(LDFLAGS) $^ -o $@
+	$(CC) $^ -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -f $(OBJS) $(EXEC)
+
+debug: CFLAGS += -DDEBUG
+debug: $(EXEC)
