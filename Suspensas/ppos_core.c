@@ -1,0 +1,381 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <sys/time.h>
+
+#include "ppos.h"
+#include "ppos_data.h"
+#include "queue.h"
+
+#define STACKSIZE 32768
+#define EXEC 2
+#define READY 1
+#define SUSP 0
+#define ENDED -1
+
+task_t mainTask;
+task_t dispTask;
+
+task_t *currentTask;
+task_t *readyQueue;
+task_t *suspendedQueue;
+
+struct sigaction action;
+struct itimerval timer;
+
+int taskCounter = 0;
+int newTaskId = 0;
+int menorPrio = 21;
+int tempo_criacao = 0;
+
+unsigned int tempo = 0;
+
+unsigned int systime(){
+  return tempo;
+}
+
+int task_id(){
+  return currentTask->id;
+}
+
+void timer_handler(){
+
+  if(currentTask->system_task == 0)
+    currentTask->quantum--;
+
+  if(currentTask->quantum == 0){
+    task_yield();
+  }
+
+  tempo++;
+
+}
+
+void setup_timer(){
+
+  action.sa_handler = timer_handler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+
+  if (sigaction(SIGALRM, &action, 0) < 0){
+    perror("Erro ao instalar o tratador de sinal: ");
+    exit(-1);
+  }
+
+  // ajusta valores do temporizador
+  timer.it_value.tv_usec = 1000 ;      // primeiro disparo, em micro-segundos
+  timer.it_value.tv_sec  = 0 ;      // primeiro disparo, em segundos
+  timer.it_interval.tv_usec = 1000 ;   // disparos subsequentes, em micro-segundos
+  timer.it_interval.tv_sec  = 0 ;   // disparos subsequentes, em segundos
+
+  // arma o temporizador ITIMER_REAL
+  if (setitimer (ITIMER_REAL, &timer, 0) < 0)
+  {
+    perror ("Erro em setitimer: ") ;
+    exit (1) ;
+  }
+
+}
+
+int task_getprio(task_t *task){
+  
+  if(! task)
+    return currentTask->prioridade;
+
+  return task->prioridade;
+
+}
+
+void task_setprio(task_t *task, int prio){
+
+  if (prio > -20 && prio < 20)
+    task->prioridade = prio;
+
+}
+
+void task_exit(int exit_code){
+
+  currentTask->status = ENDED;
+
+  if (currentTask->id == dispTask.id && exit_code == 0){
+
+    currentTask->tempo_criacao = systime() - currentTask->tempo_criacao;
+
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->id, currentTask->tempo_criacao, currentTask->tempo_processador, currentTask->ativacoes);
+
+    exit(0);
+  }
+  else{
+    
+    currentTask->tempo_criacao = systime() - currentTask->tempo_criacao;
+
+    printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n", currentTask->id, currentTask->tempo_criacao, currentTask->tempo_processador, currentTask->ativacoes);
+
+    task_switch(&dispTask);
+  }
+}
+
+int task_switch(task_t *task){
+
+  task_t *auxTask = currentTask;
+  currentTask = task;
+
+  swapcontext(&auxTask->context, &task->context);
+
+  return 0;
+
+}
+
+task_t *scheduler(){
+
+  task_t *auxTask = readyQueue;
+  task_t *nextTask;
+
+  do{
+
+    if(auxTask->prioridade < menorPrio){
+      nextTask = auxTask;
+      menorPrio = auxTask->prioridade;
+    }
+      
+    auxTask = auxTask->next;
+  
+  } while(auxTask != readyQueue);
+
+  menorPrio = 21;
+
+  do{
+
+    if(auxTask != nextTask){
+      auxTask->envelhecimento++;
+      auxTask->prioridade--;
+    }
+      
+    auxTask = auxTask->next;
+  
+  } while(auxTask != readyQueue);
+
+  nextTask->prioridade = nextTask->prioridade + nextTask->envelhecimento;
+  nextTask->envelhecimento = 0;
+
+  return nextTask;
+
+}
+
+void task_yield(){
+
+  currentTask->status = READY;
+
+  dispTask.ativacoes++;
+
+  task_switch(&dispTask);
+
+}
+
+void dispatcherBody(){
+
+  setup_timer();
+
+  if(queue_remove((queue_t **)&readyQueue, (queue_t *)&dispTask) == -1){
+    perror("Erro ao remover dispatcher da fila de prontos: ");
+    exit(-1);
+  }
+
+  taskCounter--;
+
+  if (taskCounter == 0)
+    task_exit(0);
+
+  task_t *nextTask;
+
+  while (taskCounter > 0){
+
+    nextTask = scheduler();
+    
+    nextTask->quantum = 20;
+
+    queue_remove((queue_t **)&readyQueue, (queue_t *)nextTask);
+
+    taskCounter--;
+
+    nextTask->ativacoes++;
+    int tempo_processador = systime();
+    task_switch(nextTask);
+    nextTask->tempo_processador += systime() - tempo_processador;
+
+    switch(nextTask->status){
+      case READY:
+        queue_append((queue_t **)&readyQueue, (queue_t *)nextTask);
+        taskCounter++;
+        break;
+      case SUSP:
+        break;
+      case ENDED:
+        if(queue_size((queue_t *)suspendedQueue) > 0){
+          task_t *auxTask = suspendedQueue;
+          task_t *auxTask2;
+
+          do{
+            printf("\nTask %d exit: liberando task %d\n\n",nextTask->id, auxTask->id);
+
+            auxTask2 = auxTask->next;
+            task_awake(auxTask, &suspendedQueue);
+            auxTask = auxTask2;
+          } while(suspendedQueue != NULL);
+        }
+        free(nextTask->context.uc_stack.ss_sp); 
+        break;
+    }
+  }
+
+  task_exit(0);
+
+}
+
+int task_init(task_t *task, void (*start_func)(void *), void *arg){
+
+  char *stack;
+
+  getcontext(&task->context);
+
+  stack = malloc(STACKSIZE);
+
+  if (stack){
+    task->context.uc_stack.ss_sp = stack;
+    task->context.uc_stack.ss_size = STACKSIZE;
+    task->context.uc_stack.ss_flags = 0;
+    task->context.uc_link = 0;
+  } else {
+    perror("Erro na criação da pilha: ");
+    return -1;
+  }
+
+  makecontext(&task->context, (void (*)(void))start_func, 1, arg);
+
+  task->id = ++newTaskId;
+
+  printf("\nTask %d criada!\n\n", task->id);
+
+  task->status = READY;
+  task->next = NULL;
+  task->prev = NULL;
+
+  task->prioridade = 0;
+  task->envelhecimento = 0;
+
+  task->tempo_criacao = 0;
+  task->tempo_processador = 0;
+  task->ativacoes = 0;
+
+  if(queue_append((queue_t **)&readyQueue, (queue_t *)task) == -1){
+    perror("Erro ao adicionar task na fila de prontos: ");
+    return -1;
+  }
+
+  taskCounter++;
+
+  if(task->id != dispTask.id)
+    task->system_task = 0;
+  else
+    task->system_task = 1;
+  
+  task->quantum = 20;
+
+  task->tempo_criacao = systime();
+
+  return task->id;
+
+}
+
+void ppos_init(){
+
+  setvbuf(stdout, 0, _IONBF, 0);
+
+  mainTask.id = newTaskId;
+
+  mainTask.next = NULL;
+  mainTask.prev = NULL;
+  mainTask.tempo_criacao = 0;
+  mainTask.tempo_processador = 0;
+  mainTask.ativacoes = 0;
+  mainTask.prioridade = 0;
+  mainTask.envelhecimento = 0;
+  mainTask.system_task = 0;
+  mainTask.quantum = 20;
+
+  mainTask.status = READY;
+
+  currentTask = &mainTask;
+
+  queue_append((queue_t **)&readyQueue, (queue_t *)&mainTask);
+
+  //ifdef debug
+  #ifdef DEBUG
+    printf("\nMain task adicionada a fila de prontas!\n\n");
+  #endif
+
+  taskCounter++;
+
+  if (task_init(&dispTask, dispatcherBody, NULL) != 1){
+    perror("Erro ao inicializar dispatcher: ");
+    exit(-1);
+  }
+
+  setup_timer();
+  
+}
+
+/*
+
+Suspende a tarefa atual através das seguintes ações:
+
+retira a tarefa atual da fila de tarefas prontas (se estiver nela);
+ajusta o status da tarefa atual para “suspensa”;
+insere a tarefa atual na fila apontada por queue (se essa fila não for nula);
+retorna ao dispatcher.
+
+*/
+
+void task_suspend(task_t **queue){
+
+  queue_remove((queue_t **)&readyQueue, (queue_t *)currentTask);
+
+  currentTask->status = SUSP;
+
+  if(queue){
+    if(queue_append((queue_t **)queue, (queue_t *)currentTask) == -1){
+      perror("Erro ao adicionar task na fila de suspensas: ");
+      exit(-1);
+    }
+  }
+
+  #ifdef DEBUG
+    printf("\nTask %d suspensa!\n\n", currentTask->id);
+  #endif
+
+  task_switch(&dispTask);
+}
+
+void task_awake(task_t *task, task_t **queue){
+  
+    if(queue_remove((queue_t **)queue, (queue_t *)task) == -1){
+      perror("Erro ao remover task da fila de suspensas: ");
+      exit(-1);
+    }
+  
+    task->status = READY;
+  
+    queue_append((queue_t **)&readyQueue, (queue_t *)task);
+
+    taskCounter++;
+
+}
+
+
+int task_wait(task_t *task){
+
+  task_suspend(&suspendedQueue);
+
+  return 0;
+
+}
