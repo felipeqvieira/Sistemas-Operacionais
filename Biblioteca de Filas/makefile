@@ -1,23 +1,24 @@
-TARGET = testafila
-LIBRARY = libqueue.a
-
-CC = gcc
 CFLAGS = -Wall -std=c99 -g
+LDFLAGS = -lm
+SRCDIR = src
+OBJDIR = obj
+SOURCES = $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/**/*.c)
+OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
+CC = gcc
 
-SOURCES = testafila.c
-LIB_SOURCES = queue.c
+EXEC = fila
 
-OBJECTS = $(SOURCES:.c=.o)
-LIB_OBJECTS = $(LIB_SOURCES:.c=.o)
+all: $(EXEC)
 
-$(TARGET): $(OBJECTS) $(LIBRARY)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS) -L. -lqueue
+$(EXEC): $(OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
-$(LIBRARY): $(LIB_OBJECTS)
-	ar rcs $(LIBRARY) $(LIB_OBJECTS)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $<
+$(OBJDIR)/%.o: $(SRCDIR)/%.c
+	mkdir -p $(OBJDIR)
+	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	rm -f $(OBJECTS) $(LIB_OBJECTS) $(TARGET) $(LIBRARY)
+	rm -f $(OBJS) $(EXEC)
+
+purge: clean
+	rm -f $(EXEC)
